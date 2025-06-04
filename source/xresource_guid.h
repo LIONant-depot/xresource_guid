@@ -26,115 +26,191 @@ namespace xresource
         // This is a struct instead of a namespace because I need the functions not to inline yet still be in the header files
         details() = delete;
 
-        //------------------------------------------------------------------------------------------------
-
-        static __declspec(noinline) [[nodiscard]] std::uint64_t GenerateRSCTypeGUID64() noexcept
-        {
-            // Thread-local RNG and counter
-            thread_local std::mt19937_64                            rng(std::random_device{}());
-            thread_local std::uniform_int_distribution<uint64_t>    dist;
-
-            // 14-bit counter per thread per second... if we generate more than 16383 GUIDs per second, we have a problem
-            thread_local std::uint16_t  counter             = 0;
-
-            // Thread-specific identifier (8 bits from thread ID hash)
-            thread_local auto           threadSalt          = static_cast<uint16_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()) & 0xFF);
-
-            // Machine-specific salt (12 bits, generated once per process)
-            static const auto           machineSalt         = static_cast<uint16_t>(std::random_device{}() & 0xFFF);
-
-            // Timestamp in seconds since epoch (28 bits, ~8.5 years) starting date Jan 1, 2025 UTC
-            static const auto           epoch               = std::chrono::system_clock::from_time_t(1735689600); 
-            const auto                  timestamp           = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - epoch).count();
-            const auto                  timeComponent       = static_cast<uint64_t>(timestamp & 0xFFFFFFF);
-
-            // Generate a 6-bit random component
-            const auto                  randomComponent     = static_cast<uint8_t>(dist(rng) & 0x3F);
-
-            // Combine: 28 bits timestamp + 12 bits machine + 8 bits thread + 14 bits counter + 6 bits random
-            std::uint64_t guid = (timeComponent << 36)                              // 28 bits: timestamp
-                                | (static_cast<std::uint64_t>(machineSalt) << 24)   // 12 bits: machine salt
-                                | (static_cast<std::uint64_t>(threadSalt) << 16)    //  8 bits: thread ID
-                                | ((counter++ & 0x3FFF) << 6)                       // 14 bits: counter (0-16383)
-                                | randomComponent;                                  //  6 bits: random (0-63)
-
-            return guid;
-        }
-
-        //------------------------------------------------------------------------------------------------
-
+        // Generates a 64-bit Globally Unique Identifier (GUID) for resources.
+        // Ensures uniqueness across time, machines, processes, and threads by combining:
+        // - Bit      0: Fixed bit set to 1 (1 bit, reserved to mark this GUID type)
+        // - Bits  1-29: Timestamp (29 bits, seconds since 2025-01-01 UTC, spans ~17 years)
+        // - Bits 30-34: Random value (5 bits, adds entropy to reduce collisions)
+        // - Bits 35-47: Counter (13 bits, thread-local, increments per GUID in a second)
+        // - Bits 48-55: Thread ID hash (8 bits, distinguishes threads within a process)
+        // - Bits 56-63: Machine salt (8 bits, unique per process/machine)
+        // Total: 1 + 29 + 5 + 13 + 8 + 8 = 64 bits
+        // Each component is masked to its bit size to prevent overlap and ensure correctness.
         static __declspec(noinline) [[nodiscard]] uint64_t GenerateRSCInstanceGUID64() noexcept
         {
-            // Thread-local RNG and counter
+            // Thread-local random number generator for the random component
             thread_local std::mt19937_64                            rng(std::random_device{}());
             thread_local std::uniform_int_distribution<uint64_t>    dist;
 
-            // 14-bit counter per thread per second... if we generate more than 16383 GUIDs per second, we have a problem
-            thread_local std::uint16_t  counter         = 0; 
+            // Thread-local counter, only 13 bits used to track GUIDs per thread
+            thread_local std::uint16_t counter = 0;
 
-            // Thread-specific identifier (8 bits from thread ID hash)
-            thread_local auto           threadSalt      = static_cast<uint16_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()) & 0xFF);
+            // Thread ID hash: 8-bit value computed once per thread from counter's address
+            thread_local uint8_t threadSalt = []
+            {
+                uintptr_t addr = reinterpret_cast<uintptr_t>(&counter);
+                uint8_t hash = 0;
+                for (size_t i = 0; i < sizeof(addr); ++i)
+                {
+                    hash ^= static_cast<uint8_t>((addr >> (i * 8)) & 0xFF);
+                }
+                return hash;
+            }();
 
-            // Machine-specific salt (12 bits, generated once per process)
-            static const auto           machineSalt     = static_cast<uint16_t>(std::random_device{}() & 0xFFF);
+            // Machine salt: 8-bit random value, unique per process instance
+            static const uint8_t machineSalt = static_cast<uint8_t>(std::random_device{}() & 0xFF);
 
-            // Timestamp in seconds since epoch (28 bits, ~8.5 years) starting Jan 1, 2025 UTC
-            static const auto           epoch           = std::chrono::system_clock::from_time_t(1735689600);
-            const auto                  timestamp       = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - epoch).count();
-            const auto                  timeComponent   = static_cast<std::uint64_t>(timestamp & 0xFFFFFFF); // 28 bits
+            // Epoch set to January 1, 2025 UTC (Unix timestamp: 1735689600)
+            static const auto epoch = std::chrono::system_clock::from_time_t(1735689600);
 
-            // Generate a 5-bit random component
-            const auto                  randomComponent = static_cast<uint8_t>(dist(rng) & 0x1F);
+            // Calculate seconds since epoch for the timestamp
+            const auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now() - epoch).count();
 
-            // Combine: 28 bits timestamp + 12 bits machine + 8 bits thread + 14 bits counter + 5 bits random, shifted left by 1
-            std::uint64_t guid =  (timeComponent << 37)                                 // 28 bits: timestamp (bits 63-37)
-                                | (static_cast<std::uint64_t>(machineSalt) << 25)       // 12 bits: machine salt (bits 36-25)
-                                | (static_cast<std::uint64_t>(threadSalt) << 17)        // 8 bits: thread ID (bits 24-17)
-                                | ((counter++ & 0x3FFF) << 6)                           // 14 bits: counter (bits 19-6)
-                                | (static_cast<std::uint64_t>(randomComponent) << 1)    // 5 bits: random (bits 5-1)
-                                | 1;                                                    // Bit 0 is left as 1 as a requirement for instance GUIDs
+            // Timestamp: 29 bits, masked to prevent overflow into other components
+            const auto timeComponent = static_cast<std::uint64_t>(timestamp & 0x1FFFFFFF);
+
+            // Random component: 5 bits, adds entropy within the same second
+            const auto randomComponent = static_cast<uint8_t>(dist(rng) & 0x1F);
+
+            // Counter: 13 bits, masked to stay within allocation, increments per GUID
+            const auto counterComponent = static_cast<std::uint64_t>(counter++ & 0x1FFF);
+
+            // Assemble the 64-bit GUID using bitwise operations
+            std::uint64_t guid =
+                1                                                       // Bit      0: fixed to 1
+                | (timeComponent << 1)                                  // Bits  1-29: timestamp
+                | (static_cast<std::uint64_t>(randomComponent) << 30)   // Bits 30-34: random
+                | (counterComponent << 35)                              // Bits 35-47: counter
+                | (static_cast<std::uint64_t>(threadSalt) << 48)        // Bits 48-55: thread ID
+                | (static_cast<std::uint64_t>(machineSalt) << 56)       // Bits 56-63: machine salt
+                ;
+
+            return guid;
+        }
+
+        //------------------------------------------------------------------------------------------------
+        // Works Similar to the instance version except bit 0 is not longer a constant 1
+
+        static __declspec(noinline) [[nodiscard]] uint64_t GenerateRSCTypeGUID64() noexcept
+        {
+            // Thread-local random number generator for the random component
+            thread_local std::mt19937_64                            rng(std::random_device{}());
+            thread_local std::uniform_int_distribution<uint64_t>    dist;
+
+            // Thread-local counter, only 13 bits used to track GUIDs per thread
+            thread_local std::uint16_t counter = 0;
+
+            // Thread ID hash: 8-bit value computed once per thread from counter's address
+            thread_local uint8_t threadSalt = []
+            {
+                uintptr_t addr = reinterpret_cast<uintptr_t>(&counter);
+                uint8_t hash = 0;
+                for (size_t i = 0; i < sizeof(addr); ++i)
+                {
+                    hash ^= static_cast<uint8_t>((addr >> (i * 8)) & 0xFF);
+                }
+                return hash;
+            }();
+
+            // Machine salt: 8-bit random value, unique per process instance
+            static const uint8_t machineSalt = static_cast<uint8_t>(std::random_device{}() & 0xFF);
+
+            // Epoch set to January 1, 2025 UTC (Unix timestamp: 1735689600)
+            static const auto epoch = std::chrono::system_clock::from_time_t(1735689600);
+
+            // Calculate seconds since epoch for the timestamp
+            const auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now() - epoch).count();
+
+            // Timestamp: 30 bits, masked to prevent overflow into other components
+            const auto timeComponent = static_cast<std::uint64_t>(timestamp & 0x3FFFFFFF);
+
+            // Random component: 5 bits, adds entropy within the same second
+            const auto randomComponent = static_cast<uint8_t>(dist(rng) & 0x1F);
+
+            // Counter: 13 bits, masked to stay within allocation, increments per GUID
+            const auto counterComponent = static_cast<std::uint64_t>(counter++ & 0x1FFF);
+
+            // Assemble the 64-bit GUID using bitwise operations
+            std::uint64_t guid =
+                timeComponent                                               // Bits  0-29: timestamp
+                | (static_cast<std::uint64_t>(randomComponent) << 30)       // Bits 30-34: random
+                | (counterComponent << 35)                                  // Bits 35-47: counter
+                | (static_cast<std::uint64_t>(threadSalt) << 48)            // Bits 48-55: thread ID
+                | (static_cast<std::uint64_t>(machineSalt) << 56)           // Bits 56-63: machine salt
+                ;
 
             return guid;
         }
 
         //------------------------------------------------------------------------------------------------
 
+        // Generates a 128-bit Globally Unique Identifier (GUID) for resources.
+        // Ensures uniqueness across time, machines, processes, and threads by combining:
+        // - Bit        0: Fixed bit set to 1 (1 bit, reserved to mark this GUID type)
+        // - Bits    1-48: Timestamp (48 bits, seconds since 2025-01-01 UTC, spans ~8,925 years)
+        // - Bits   49-79: Random value (31 bits, adds entropy to reduce collisions)
+        // - Bits  80-103: Counter (24 bits, thread-local, increments per GUID in a second)
+        // - Bits 104-111: Thread ID hash (8 bits, distinguishes threads within a process)
+        // - Bits 112-127: Machine salt (16 bits, unique per process/machine)
+        // Total: 1 + 48 + 31 + 24 + 8 + 16 = 128 bits
+        // Each component is masked to its bit size to prevent overlap and ensure correctness.
         static __declspec(noinline) [[nodiscard]] std::pair<std::uint64_t, std::uint64_t> GenerateRSCInstanceGUID128() noexcept
         {
-            // Thread-local RNG and counter
-            thread_local std::mt19937_64                            rng(std::random_device{}());
-            thread_local std::uniform_int_distribution<uint64_t>    dist;
+            // Thread-local random number generator for the random component
+            thread_local std::mt19937_64                              rng(std::random_device{}());
+            thread_local std::uniform_int_distribution<std::uint64_t> dist;
 
-            // 28-bit counter per thread per second (268M possible values)
-            thread_local std::uint32_t  counter         = 0;
+            // Thread-local counter, only 24 bits used to track GUIDs per thread
+            thread_local std::uint32_t counter = 0;
 
-            // Thread-specific identifier (20 bits from thread ID hash)
-            thread_local auto           threadSalt      = static_cast<uint32_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()) & 0xFFFFF);
+            // Thread ID hash: 8-bit value computed once per thread from counter's address
+            thread_local std::uint8_t threadSalt = []
+            {
+                std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(&counter);
+                std::uint8_t hash = 0;
+                for (size_t i = 0; i < sizeof(addr); ++i)
+                {
+                    hash ^= static_cast<std::uint8_t>((addr >> (i * 8)) & 0xFF);
+                }
+                return hash;
+            }();
 
-            // Machine-specific salt (20 bits, generated once per process)
-            static const auto           machineSalt     = static_cast<uint32_t>(std::random_device{}() & 0xFFFFF);
+            // Machine salt: 16-bit random value, unique per process instance
+            static const std::uint16_t machineSalt = static_cast<std::uint16_t>(std::random_device{}() & 0xFFFF);
 
-            // Timestamp in seconds since epoch (31 bits, ~68 years) starting Jan 1, 2025 UTC
-            static const auto           epoch           = std::chrono::system_clock::from_time_t(1735689600);
-            const auto                  timestamp       = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - epoch).count();
-            const auto                  timeComponent   = static_cast<std::uint64_t>(timestamp & 0x7FFFFFFF); // 31 bits
+            // Epoch set to January 1, 2025 UTC (Unix timestamp: 1735689600)
+            static const auto epoch = std::chrono::system_clock::from_time_t(1735689600);
 
-            // Generate a 28-bit random component
-            const auto                  randomComponent = static_cast<std::uint32_t>(dist(rng) & 0xFFFFFFF);
+            // Calculate seconds since epoch for the timestamp
+            const auto timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now() - epoch).count();
 
-            // Split into two 64-bit parts
-            // High 64 bits: 31 bits timestamp + 20 bits machine + 13 bits thread
-            std::uint64_t high = (timeComponent << 33)                                      // 31 bits: timestamp (bits 63-33)
-                               | (static_cast<std::uint64_t>(machineSalt) << 13)            // 20 bits: machine salt (bits 32-13)
-                               | (threadSalt >> 7);                                         // 13 bits: upper part of thread ID (bits 12-0)
+            // Timestamp: 48 bits, masked to prevent overflow into other components
+            const std::uint64_t timeComponent = static_cast<std::uint64_t>(timestamp & 0xFFFFFFFFFFFF);
 
-            // Low 64 bits: 7 bits thread + 28 bits counter + 28 bits random + 1 bit flag
-            std::uint64_t low = (static_cast<std::uint64_t>(threadSalt & 0x7F) << 57)       // 7 bits: lower part of thread ID (bits 63-57)
-                              | (static_cast<std::uint64_t>(counter++ & 0xFFFFFFF) << 29)   // 28 bits: counter (bits 56-29)
-                              | (static_cast<std::uint64_t>(randomComponent) << 1)          // 28 bits: random (bits 28-1)
-                              | 1;                                                          // Bit 0 is left as 1
+            // Random component: 31 bits, adds entropy within the same second
+            const std::uint32_t randomComponent = static_cast<std::uint32_t>(dist(rng) & 0x7FFFFFFF);
 
-            return { low, high };
+            // Counter: 24 bits, masked to stay within allocation, increments per GUID
+            const std::uint32_t counterComponent = static_cast<std::uint32_t>(counter++ & 0xFFFFFF);
+
+            // Assemble the 128-bit GUID using bitwise operations
+            // Lower 64 bits: fixed bit + timestamp (48 bits) + random (15 bits)
+            const std::uint64_t lower =
+                1ULL                                                            // Bit       0: fixed to 1
+                | (timeComponent << 1)                                          // Bits   1-48: timestamp
+                | (static_cast<std::uint64_t>(randomComponent & 0x7FFF) << 49); // Bits  49-63: random (lower 15 bits)
+
+            // Upper 64 bits: random (16 bits) + counter (24 bits) + thread ID (8 bits) + machine salt (16 bits)
+            const std::uint64_t upper =
+                  (static_cast<std::uint64_t>(randomComponent >> 15) << 48) // Bits  0-15: random (upper 16 bits)
+                | (static_cast<std::uint64_t>(counterComponent) << 24)      // Bits 16-39: counter
+                | (static_cast<std::uint64_t>(threadSalt) << 16)            // Bits 40-47: thread ID
+                | static_cast<std::uint64_t>(machineSalt);                  // Bits 48-63: machine salt
+
+            return { lower, upper };
         }
     };
 
@@ -467,43 +543,6 @@ namespace xresource
 
     //------------------------------------------------------------------------------------------------
 
-    template< typename T_INSTANCE_TYPE, type_guid T_TYPE_GUID_V >
-    struct def_guid_t
-    {
-        T_INSTANCE_TYPE                 m_Instance;     // also used in the pool as the next empty entry...
-        inline static constexpr auto    m_Type      = T_TYPE_GUID_V;
-
-        template< typename T>
-        constexpr bool operator == (const T& B) const noexcept
-        {
-            return m_Instance == B.m_Instance && m_Type == B.m_Type;
-        }
-
-        constexpr bool empty() const noexcept
-        {
-            return m_Instance.m_Value == 0;
-        }
-
-        void clear() noexcept
-        {
-            m_Instance.m_Value = 0;
-        }
-
-        constexpr bool isValid() const noexcept
-        {
-            return m_Instance.isValid();
-        }
-    };
-
-    //------------------------------------------------------------------------------------------------
-    template< typename type_guid T_TYPE_GUID_V >
-    using def_guid = def_guid_t<instance_guid, T_TYPE_GUID_V>;
-
-    template< typename type_guid T_TYPE_GUID_V >
-    using def_guid_large = def_guid_t<instance_guid_large, T_TYPE_GUID_V>;
-
-    //------------------------------------------------------------------------------------------------
-
     template< typename T_INSTANCE_TYPE >
     struct full_guid_t
     {
@@ -541,6 +580,61 @@ namespace xresource
     
     using full_guid       = full_guid_t<instance_guid>;
     using full_guid_large = full_guid_t<instance_guid_large>;
+
+    //------------------------------------------------------------------------------------------------
+    // This is provided when you want to use a full guid yet still be type safe...
+    // Honestly I am not sure if this is even a good idea it could literally be an anti-pattern
+    // since you should be using stead a def_guid. But none the less I will leave it here
+    // even if it is for documented that this pattern was considered.
+    template<typename T_TAG>
+    struct full_guid_taged : full_guid
+    {
+        using type = T_TAG;
+        using full_guid::full_guid_t;
+        full_guid_taged( T_TAG V ) : full_guid( V.m_Instance, V.m_Type ) {}
+    };
+
+    //------------------------------------------------------------------------------------------------
+
+    template< typename T_INSTANCE_TYPE, type_guid T_TYPE_GUID_V >
+    struct def_guid_t
+    {
+        T_INSTANCE_TYPE                 m_Instance;     // also used in the pool as the next empty entry...
+        inline static constexpr auto    m_Type = T_TYPE_GUID_V;
+
+        template< typename T>
+        constexpr bool operator == (const T& B) const noexcept
+        {
+            return m_Instance == B.m_Instance && m_Type == B.m_Type;
+        }
+
+        constexpr bool empty() const noexcept
+        {
+            return m_Instance.m_Value == 0;
+        }
+
+        void clear() noexcept
+        {
+            m_Instance.m_Value = 0;
+        }
+
+        constexpr bool isValid() const noexcept
+        {
+            return m_Instance.isValid();
+        }
+
+        operator full_guid() const noexcept
+        {
+            return full_guid{ m_Instance, m_Type };
+        }
+    };
+
+    //------------------------------------------------------------------------------------------------
+    template< typename type_guid T_TYPE_GUID_V >
+    using def_guid = def_guid_t<instance_guid, T_TYPE_GUID_V>;
+
+    template< typename type_guid T_TYPE_GUID_V >
+    using def_guid_large = def_guid_t<instance_guid_large, T_TYPE_GUID_V>;
 
     //------------------------------------------------------------------------------------------------
     
@@ -621,6 +715,22 @@ namespace std
             return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
         }
     };
+
+    template<typename T>
+    struct hash<xresource::full_guid_taged<T>>
+    {
+        inline
+            std::size_t operator()(const xresource::full_guid& k) const noexcept
+        {
+            std::size_t h1 = std::hash<uint64_t>{}(k.m_Instance.m_Value);
+            std::size_t h2 = std::hash<uint64_t>{}(k.m_Type.m_Value);
+
+            // Combine the hashes (simple but effective method)
+            return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+        }
+    };
+
+
     template<>
     struct hash<xresource::full_guid_large>
     {
