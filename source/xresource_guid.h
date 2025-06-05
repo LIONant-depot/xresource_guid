@@ -21,10 +21,10 @@
 
 namespace xresource
 {
-    struct details
+    struct guid_generator
     {
         // This is a struct instead of a namespace because I need the functions not to inline yet still be in the header files
-        details() = delete;
+        guid_generator() = delete;
 
         // Generates a 64-bit Globally Unique Identifier (GUID) for resources.
         // Ensures uniqueness across time, machines, processes, and threads by combining:
@@ -36,7 +36,7 @@ namespace xresource
         // - Bits 56-63: Machine salt (8 bits, unique per process/machine)
         // Total: 1 + 29 + 5 + 13 + 8 + 8 = 64 bits
         // Each component is masked to its bit size to prevent overlap and ensure correctness.
-        static __declspec(noinline) [[nodiscard]] uint64_t GenerateRSCInstanceGUID64() noexcept
+        static __declspec(noinline) [[nodiscard]] uint64_t Instance64() noexcept
         {
             // Thread-local random number generator for the random component
             thread_local std::mt19937_64                            rng(std::random_device{}());
@@ -92,7 +92,7 @@ namespace xresource
         //------------------------------------------------------------------------------------------------
         // Works Similar to the instance version except bit 0 is not longer a constant 1
 
-        static __declspec(noinline) [[nodiscard]] uint64_t GenerateRSCTypeGUID64() noexcept
+        static __declspec(noinline) [[nodiscard]] uint64_t Type64() noexcept
         {
             // Thread-local random number generator for the random component
             thread_local std::mt19937_64                            rng(std::random_device{}());
@@ -156,7 +156,7 @@ namespace xresource
         // - Bits 112-127: Machine salt (16 bits, unique per process/machine)
         // Total: 1 + 48 + 31 + 24 + 8 + 16 = 128 bits
         // Each component is masked to its bit size to prevent overlap and ensure correctness.
-        static __declspec(noinline) [[nodiscard]] std::pair<std::uint64_t, std::uint64_t> GenerateRSCInstanceGUID128() noexcept
+        static __declspec(noinline) [[nodiscard]] std::pair<std::uint64_t, std::uint64_t> Instance128() noexcept
         {
             // Thread-local random number generator for the random component
             thread_local std::mt19937_64                              rng(std::random_device{}());
@@ -212,14 +212,78 @@ namespace xresource
 
             return { lower, upper };
         }
+
+        //------------------------------------------------------------------------------------------------
+
+        // Compile time version of GenerateGUID for strings
+        template<std::size_t N>
+        static consteval
+        [[nodiscard]] std::uint64_t Type64FromString(const char(&str)[N], uint64_t hash = 0x548c9decbce65297ULL) noexcept
+        {
+            constexpr uint64_t m = 0xc6a4a7935bd1e995ULL;
+
+            // Skip null terminator
+            for (std::size_t i = 0; i < N - 1; ++i) 
+            { 
+                hash = (hash ^ static_cast<std::uint64_t>(str[i])) * m;
+            }
+
+            hash ^= static_cast<std::uint64_t>(N - 1); // Length without null
+            hash ^= hash >> 33;
+            hash *= 0x85ebca6b;
+            hash ^= hash >> 13;
+            hash *= 0xc2b2ae35;
+            hash ^= hash >> 16;
+
+            return hash;
+        }
+
+        //------------------------------------------------------------------------------------------------
+
+        template<std::size_t N>
+        static consteval
+        [[nodiscard]] std::uint64_t Instance64FromString(const char(&str)[N], const uint64_t hash = 0x548c9decbce65297ULL) noexcept
+        {
+            return (Type64FromString(str, hash) << 1) | 1;
+        }
+
     };
 
     //------------------------------------------------------------------------------------------------
 
     template<typename T_ARG>
-    struct guid
+    union guid
     {
         std::uint64_t m_Value;
+        void*         m_Pointer;
+
+        guid() = default;
+
+        template<std::size_t N>
+        constexpr guid(const char(&str)[N]) noexcept 
+        {
+            uint64_t hash = 0x548c9decbce65297ULL;
+
+            constexpr uint64_t m = 0xc6a4a7935bd1e995ULL;
+
+            // Skip null terminator
+            for (std::size_t i = 0; i < N - 1; ++i)
+            {
+                hash = (hash ^ static_cast<std::uint64_t>(str[i])) * m;
+            }
+
+            hash ^= static_cast<std::uint64_t>(N - 1); // Length without null
+            hash ^= hash >> 33;
+            hash *= 0x85ebca6b;
+            hash ^= hash >> 13;
+            hash *= 0xc2b2ae35;
+            hash ^= hash >> 16;
+
+            if constexpr (std::is_same_v<T_ARG, struct rsc_instance_guid_tag>) m_Value = (hash<<1) | 1;
+            else m_Value = hash;
+        }
+
+        constexpr guid(std::uint64_t Value) : m_Value { Value } {}
 
         constexpr
         [[nodiscard]]bool operator == (const guid& B) const noexcept
@@ -279,15 +343,21 @@ namespace xresource
         constexpr
         [[nodiscard]] bool isValid() const noexcept requires std::is_same_v<T_ARG, struct rsc_instance_guid_tag>
         {
-            return !!(m_Value & 1);
+            return m_Value;
+        }
+
+        constexpr
+        bool isPointer () const noexcept
+        {
+            return !(m_Value & 1);
         }
 
         inline static [[nodiscard]] guid GenerateGUID() noexcept
         {
             if constexpr (std::is_same_v<T_ARG, struct rsc_instance_guid_tag>)
-                return {details::GenerateRSCInstanceGUID64()};
+                return { guid_generator::Instance64()};
             else
-                return {details::GenerateRSCTypeGUID64()};
+                return { guid_generator::Type64()};
         }
 
         // Generate GUID based on a string... we try to make it well distributed in the space of bits rather than unique in time
@@ -319,42 +389,19 @@ namespace xresource
             else
                 return {hash};
         }
-
-        // Compile time version of GenerateGUID for strings
-        static consteval
-        [[nodiscard]] guid generate_guid(const char* str, uint64_t hash = 0x548c9decbce65297ULL, int len = 0) noexcept
-        {
-            constexpr uint64_t m = 0xc6a4a7935bd1e995ULL;
-            uint64_t h = hash;
-
-            // Process string character-by-character
-            return (*str == '\0') ?
-                // Finalization when string ends
-                [](uint64_t h, int len) consteval noexcept -> guid
-                {
-                    h ^= len;
-                    h ^= h >> 33;
-                    h *= 0x85ebca6b;
-                    h ^= h >> 13;
-                    h *= 0xc2b2ae35;
-                    h ^= h >> 16;
-
-                    if constexpr (std::is_same_v<T_ARG, struct rsc_instance_guid_tag>)
-                        return { (h << 1) | 1 };
-                    else
-                        return { h };
-                }(h, len) :
-                // Continue hashing
-                generate_guid(str + 1, (h ^ static_cast<uint64_t>(*str)) * m, len + 1);
-        }
     };
 
     //------------------------------------------------------------------------------------------------
 
-    struct instance_guid_large
+    union instance_guid_large
     {
-        std::uint64_t m_Low;
-        std::uint64_t m_High;
+        struct
+        {
+            std::uint64_t m_Low;
+            std::uint64_t m_High;
+        };
+
+        void* m_Pointer;
 
         constexpr
         bool operator == (const instance_guid_large& B) const noexcept
@@ -402,12 +449,18 @@ namespace xresource
         constexpr
         [[nodiscard]] bool isValid() const noexcept
         {
-            return (m_Low & 1) == 1;
+            return (m_Low | m_High) && !!(m_Low & 1);
+        }
+
+        constexpr
+        [[nodiscard]] bool isPointer() const noexcept
+        {
+            return !!(m_Low & 1);
         }
 
         inline static [[nodiscard]] instance_guid_large GenerateGUID() noexcept
         {
-            const auto P = details::GenerateRSCInstanceGUID128();
+            const auto P = guid_generator::Instance128();
             return { P.first, P.second };
         }
 
@@ -720,7 +773,7 @@ namespace std
     struct hash<xresource::full_guid_taged<T>>
     {
         inline
-            std::size_t operator()(const xresource::full_guid& k) const noexcept
+        std::size_t operator()(const xresource::full_guid& k) const noexcept
         {
             std::size_t h1 = std::hash<uint64_t>{}(k.m_Instance.m_Value);
             std::size_t h2 = std::hash<uint64_t>{}(k.m_Type.m_Value);
