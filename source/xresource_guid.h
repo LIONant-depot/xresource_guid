@@ -252,10 +252,13 @@ namespace xresource
     //------------------------------------------------------------------------------------------------
 
     template<typename T_ARG>
-    union guid
+    struct guid
     {
-        std::uint64_t m_Value;
-        void*         m_Pointer;
+        union
+        {
+            std::uint64_t m_Value=0;
+            void*         m_Pointer;
+        };
 
         guid() = default;
 
@@ -393,15 +396,20 @@ namespace xresource
 
     //------------------------------------------------------------------------------------------------
 
-    union instance_guid_large
+    struct instance_guid_large
     {
-        struct
+        union
         {
-            std::uint64_t m_Low;
-            std::uint64_t m_High;
+            struct
+            {
+                std::uint64_t m_Low;
+                std::uint64_t m_High;
+            };
+
+            void* m_Pointer{};
         };
 
-        void* m_Pointer;
+        //constexpr instance_guid_large() : m_Low{0}, m_High{0} {}
 
         constexpr
         bool operator == (const instance_guid_large& B) const noexcept
@@ -574,7 +582,7 @@ namespace xresource
                     // Set LSB to 1 for instance GUID
                     h2 = (h2 << 1) | 1;
 
-                    return instance_guid_large{h1, h2};
+                    return instance_guid_large{.m_Low = h1, .m_High = h2};
                 }(h1, h2, len) :
                 // Continue hashing: alternate between affecting h1 and h2
                 (len % 2 == 0) ?
