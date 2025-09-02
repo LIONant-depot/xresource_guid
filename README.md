@@ -31,15 +31,15 @@ and 128-bit GUIDs for resource types and instances, ensuring uniqueness across t
 
 int main() {
     // Generate a 64-bit instance GUID
-    xresource::instance_guid guid = xresource::instance_guid::GenerateGUID();
+    xresource::instance_guid guid = xresource::instance_guid::GenerateGUIDCopy();
     std::cout << "64-bit Instance GUID: " << guid.m_Value << std::endl;
 
     // Generate a 128-bit instance GUID
-    xresource::instance_guid_large guid_large = xresource::instance_guid_large::GenerateGUID();
+    xresource::instance_guid_large guid_large = xresource::instance_guid_large::GenerateGUIDCopy();
     std::cout << "128-bit Instance GUID: (" << guid_large.m_Low << ", " << guid_large.m_High << ")" << std::endl;
 
     // Generate a type GUID from a string at runtime
-    xresource::type_guid type_guid = xresource::type_guid::GenerateGUID("resource_type");
+    xresource::type_guid type_guid = xresource::type_guid::GenerateGUIDCopy("resource_type");
     std::cout << "Type GUID from string: " << type_guid.m_Value << std::endl;
 
     // Generate a full GUID combining type and instance
