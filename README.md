@@ -1,6 +1,9 @@
-# xresource: Robust Resource Identification in C++
+# xresource_guid_: Robust Resource Identification in C++
 
-Unlock the power of unique resource identification with **xresource**, a modern C++ library designed to generate and manage Globally Unique Identifiers (GUIDs) for resources. Built with performance and flexibility in mind, xresource provides a type-safe, efficient way to create 64-bit and 128-bit GUIDs for resource types and instances, ensuring uniqueness across time, threads, and machines.
+Unlock the power of unique resource identification with **xresource_guid_**, 
+a modern C++ library designed to generate and manage Globally Unique Identifiers (GUIDs) for resources. 
+Built with performance and flexibility in mind, xresource provides a type-safe, efficient way to create 64-bit 
+and 128-bit GUIDs for resource types and instances, ensuring uniqueness across time, threads, and machines.
 
 ## Key Features
 
