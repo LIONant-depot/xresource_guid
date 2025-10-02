@@ -1,8 +1,67 @@
+#ifndef XRESOURCE_XPROPERTIES_BRIDGE_H
+#define XRESOURCE_XPROPERTIES_BRIDGE_H
+#pragma once
 
 #include "dependencies/xproperty/source/xcore/my_properties.h"
+#include "dependencies/xresource_mgr/source/xresource_mgr.h"
 
 namespace xresource
 {
+    // Give properties to the type_guid
+    struct type_guid_give_properties : xresource::type_guid
+    {
+        XPROPERTY_DEF
+        ("type_guid", xresource::type_guid
+        , obj_member < "Value"
+            , &xresource::type_guid::m_Value
+            , member_flags<flags::SHOW_READONLY>
+            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_help<"64bit Unique identifier for the resource type, this is how the system knows about this resource type. "
+                          "This is part of the full 128bit which is the true unique ID of the resource"
+            >>
+        );
+    };
+    XPROPERTY_REG(type_guid_give_properties)
+
+    // Give properties to the instance_guid
+    struct instance_guid_give_properties : xresource::instance_guid
+    {
+        XPROPERTY_DEF
+        ("instance_guid", xresource::instance_guid
+        , obj_member < "Value"
+            , &xresource::instance_guid::m_Value
+            , member_flags<flags::SHOW_READONLY>
+            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_help<"64bit Unique identifier for the resource, this is how the system knows about this resource "
+                          "This is part of the full 128bit which is the true unique ID of the resource"
+            >>
+        );
+    };
+    XPROPERTY_REG(instance_guid_give_properties)
+
+    // Give properties to the instance_guid
+    struct instance_guid_large_give_properties : xresource::instance_guid_large
+    {
+        XPROPERTY_DEF
+        ("instance_guid", xresource::instance_guid_large
+        , obj_member < "Low"
+            , &xresource::instance_guid_large::m_Low
+            , member_flags<flags::SHOW_READONLY>
+            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_help<"64bit Unique identifier for the resource, this is how the system knows about this resource "
+                          "This is part of the full 128bit which is the true unique ID of the resource"
+            >>
+        , obj_member < "High"
+            , &xresource::instance_guid_large::m_High
+            , member_flags<flags::SHOW_READONLY>
+            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_help<"64bit Unique identifier for the resource, this is how the system knows about this resource "
+                          "This is part of the full 128bit which is the true unique ID of the resource"
+            >>
+        );
+    };
+    XPROPERTY_REG(instance_guid_large_give_properties)
+
     //
     // We create properties for the particular resource reference
     //
@@ -12,14 +71,21 @@ namespace xresource
         XPROPERTY_DEF
         ("RscRef", xresource::def_guid<T_TYPE_GUID_V>
         , obj_member
-            < "InstanceGuid"
-            , +[](xresource::def_guid<T_TYPE_GUID_V>& O) ->auto& { return O.m_Instance.m_Value; }
-            , member_help<"This is the instance GUID"
-            >>
-        , obj_member
-            < "TypeGuid"
-            , +[](xresource::def_guid<T_TYPE_GUID_V>& O) ->auto& { return O.m_Type.m_Value; }
-            , member_help<"This is the type GUID"
+            < "FullGUID"
+            , +[](xresource::def_guid<T_TYPE_GUID_V>& I, bool bRead, xresource::full_guid& xFullGuid )
+            {
+                if ( bRead )
+                {
+                    if (I.m_Instance.isPointer()) xFullGuid = xresource::g_Mgr.getFullGuid(I);
+                    else                          xFullGuid = I;
+                }
+                else
+                {
+                    if (I.m_Instance.isPointer()) xresource::g_Mgr.ReleaseRef(I);
+                    I.m_Instance = xFullGuid.m_Instance;
+                }
+            }
+            , member_help<"Full GUID used to serialize and Inspect our GUID"
             >>
         )
     };
@@ -45,3 +111,4 @@ namespace xresource
         xresource::property_reg_t<T_TYPE_GUID_V>      m_PropertyRefRegistration = {};
     };
 }
+#endif
