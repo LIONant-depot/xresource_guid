@@ -8,14 +8,14 @@
 namespace xresource
 {
     // Give properties to the type_guid
-    struct type_guid_give_properties : xresource::type_guid
+    struct type_guid_give_properties : type_guid
     {
         XPROPERTY_DEF
-        ("type_guid", xresource::type_guid
+        ("type_guid", type_guid
         , obj_member < "Value"
-            , &xresource::type_guid::m_Value
+            , &type_guid::m_Value
             , member_flags<flags::SHOW_READONLY>
-            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_ui<std::uint64_t>::drag_bar<0.f, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
             , member_help<"64bit Unique identifier for the resource type, this is how the system knows about this resource type. "
                           "This is part of the full 128bit which is the true unique ID of the resource"
             >>
@@ -31,7 +31,7 @@ namespace xresource
         , obj_member < "Value"
             , &xresource::instance_guid::m_Value
             , member_flags<flags::SHOW_READONLY>
-            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_ui<std::uint64_t>::drag_bar<0.f, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
             , member_help<"64bit Unique identifier for the resource, this is how the system knows about this resource "
                           "This is part of the full 128bit which is the true unique ID of the resource"
             >>
@@ -47,14 +47,14 @@ namespace xresource
         , obj_member < "Low"
             , &xresource::instance_guid_large::m_Low
             , member_flags<flags::SHOW_READONLY>
-            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_ui<std::uint64_t>::drag_bar<0.f, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
             , member_help<"64bit Unique identifier for the resource, this is how the system knows about this resource "
                           "This is part of the full 128bit which is the true unique ID of the resource"
             >>
         , obj_member < "High"
             , &xresource::instance_guid_large::m_High
             , member_flags<flags::SHOW_READONLY>
-            , member_ui<std::uint64_t>::drag_bar<0, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
+            , member_ui<std::uint64_t>::drag_bar<0.f, 0, std::numeric_limits<std::uint64_t>::max(), "%llX">
             , member_help<"64bit Unique identifier for the resource, this is how the system knows about this resource "
                           "This is part of the full 128bit which is the true unique ID of the resource"
             >>

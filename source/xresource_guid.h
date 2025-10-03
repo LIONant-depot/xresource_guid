@@ -676,9 +676,20 @@ namespace xresource
     };
 
     //------------------------------------------------------------------------------------------------
-    
+    template <typename Inst, type_guid T_TYPE_GUID_V> struct def_guid_t;
+
+    template <typename T> struct is_full_guid_t : std::false_type {};
+    template <typename T> struct is_full_guid_t<full_guid_t<T>> : std::true_type {};
+
     using full_guid       = full_guid_t<instance_guid>;
     using full_guid_large = full_guid_t<instance_guid_large>;
+
+
+    template <typename T> struct is_def_guid_t : std::false_type {};
+    template <typename T_A, type_guid T_TYPE_GUID_V> struct is_def_guid_t<def_guid_t<T_A, T_TYPE_GUID_V>> : std::true_type {};
+
+    template <typename T> concept is_guid_type_v = is_full_guid_t<T>::value || is_def_guid_t<T>::value;
+
 
     //------------------------------------------------------------------------------------------------
     // This is provided when you want to use a full guid yet still be type safe...
@@ -702,6 +713,7 @@ namespace xresource
         inline static constexpr auto    m_Type = T_TYPE_GUID_V;
 
         template< typename T>
+        requires is_guid_type_v<T>
         constexpr bool operator == (const T& B) const noexcept
         {
             return m_Instance == B.m_Instance && m_Type == B.m_Type;
@@ -729,6 +741,7 @@ namespace xresource
     };
 
     //------------------------------------------------------------------------------------------------
+
     template< typename type_guid T_TYPE_GUID_V >
     using def_guid = def_guid_t<instance_guid, T_TYPE_GUID_V>;
 
