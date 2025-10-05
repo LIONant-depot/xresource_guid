@@ -68,6 +68,8 @@ namespace xresource
     template< type_guid T_TYPE_GUID_V >
     struct property_ref_friend
     {
+        inline static constexpr auto type_guid_filter_v = std::array{ T_TYPE_GUID_V };
+
         XPROPERTY_DEF
         ("RscRef", xresource::def_guid<T_TYPE_GUID_V>
         , obj_member
@@ -85,6 +87,7 @@ namespace xresource
                     I.m_Instance = xFullGuid.m_Instance;
                 }
             }
+            , member_ui<xresource::full_guid>::type_filters<type_guid_filter_v>
             , member_help<"Full GUID used to serialize and Inspect our GUID"
             >>
         )
