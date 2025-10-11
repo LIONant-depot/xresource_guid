@@ -73,18 +73,18 @@ namespace xresource
         XPROPERTY_DEF
         ("RscRef", xresource::def_guid<T_TYPE_GUID_V>
         , obj_member
-            < "FullGUID"
+            < "Value"
             , +[](xresource::def_guid<T_TYPE_GUID_V>& I, bool bRead, xresource::full_guid& xFullGuid )
             {
                 if ( bRead )
                 {
-                    if (I.m_Instance.isPointer()) xFullGuid = xresource::g_Mgr.getFullGuid(I);
-                    else                          xFullGuid = I;
+                    if (I.m_Instance.empty() || not I.m_Instance.isPointer()) xFullGuid = I;
+                    else xFullGuid = xresource::g_Mgr.getFullGuid(I);
                 }
                 else
                 {
-                    if (I.m_Instance.isPointer()) xresource::g_Mgr.ReleaseRef(I);
-                    I.m_Instance = xFullGuid.m_Instance;
+                    if (I.m_Instance.empty() || not I.m_Instance.isPointer()) I.m_Instance = xFullGuid.m_Instance;
+                    else xresource::g_Mgr.ReleaseRef(I);
                 }
             }
             , member_ui<xresource::full_guid>::type_filters<type_guid_filter_v>
