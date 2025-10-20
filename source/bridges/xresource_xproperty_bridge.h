@@ -65,6 +65,7 @@ namespace xresource
     //
     // We create properties for the particular resource reference
     //
+    /*
     template< type_guid T_TYPE_GUID_V >
     struct property_ref_friend
     {
@@ -92,13 +93,14 @@ namespace xresource
             >>
         )
     };
+    */
 
     //
     // This allows the user to more easily register the reference with the property system
     // just need to create a global variable with this type
     //
-    template<type_guid T_TYPE_GUID_V>
-    using property_reg_t = decltype(property_ref_friend<T_TYPE_GUID_V>::PropertiesDefinition());
+ //   template<type_guid T_TYPE_GUID_V>
+ //   using property_reg_t = decltype(property_ref_friend<T_TYPE_GUID_V>::PropertiesDefinition());
 
     //
     // Usually when registering a loader from the resource manager you need to register a few things as well
@@ -111,7 +113,7 @@ namespace xresource
     struct common_registrations
     {
         xresource::loader_registration<T_TYPE_GUID_V> m_LoaderRegistration      = {};
-        xresource::property_reg_t<T_TYPE_GUID_V>      m_PropertyRefRegistration = {};
+    //    xresource::property_reg_t<T_TYPE_GUID_V>      m_PropertyRefRegistration = {};
     };
 }
 #endif
